@@ -32,21 +32,26 @@ from algorithms import canonical_method, solve
 from problem import ParseError, load_problem
 
 
+# Entry flow: parse arguments -> load_problem (problem.py) -> solve (algorithms.py) -> print.
 def main(argv: list[str]) -> int:
+    # argv includes the script name, so exactly three entries are required.
     if len(argv) != 3:
         print("Usage: python search.py <filename> <method>", file=sys.stderr)
         print("Methods: BFS, AS, CUS1, CUS2", file=sys.stderr)
         print("Optional research method: ALL", file=sys.stderr)
         return 1
 
+    # argv[1] is the map path; argv[2] selects BFS, AS, CUS1, CUS2, or ALL.
     filename = argv[1]
     try:
+        # Validate the method and normalize aliases such as A* to AS.
         method = canonical_method(argv[2])
     except ValueError as exc:
         print(exc, file=sys.stderr)
         return 1
 
     try:
+        # Build a Problem containing coordinates, outgoing edges, origin, and goals.
         problem = load_problem(filename)
     except FileNotFoundError:
         print(f"File not found: {filename}", file=sys.stderr)
@@ -55,17 +60,22 @@ def main(argv: list[str]) -> int:
         print(f"Could not read problem file: {exc}", file=sys.stderr)
         return 1
 
+    # solve dispatches to the shared tree search, or the separate ALL extension.
     result = solve(problem, method)
     # The method name printed is the official one (BFS, AS, CUS1, CUS2, ALL).
     print(f"{filename} {method}")
+    # An unreachable goal is a completed search, not an invalid invocation.
     if result is None:
         print("No path found")
         return 0
 
+    # Print the goal and CREATED search-node count, followed by the reconstructed path.
     print(f"{result.goal} {result.created}")
     print(" ".join(str(node) for node in result.path))
     return 0
 
 
+# Direct execution starts here; importing this module does not run main.
 if __name__ == "__main__":
+    # Pass command-line arguments to main; 0 signals normal completion, 1 an input error.
     sys.exit(main(sys.argv))
