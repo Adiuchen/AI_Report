@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple
 from algorithms import euclidean, solve
 from problem import Number, Problem, load_problem
 
+# Resolve map and script paths relative to this file, not the terminal working directory.
 ROOT = os.path.dirname(os.path.abspath(__file__))
 METHODS = ("BFS", "AS", "CUS1", "CUS2")
 
@@ -94,6 +95,7 @@ EXPECTED_PATHS = {
 }
 
 
+# Independent reference solver: this does not call the production tree-search loop.
 def dijkstra(problem: Problem, source: int, target: int, hop: bool = False) -> Optional[Tuple[List[int], Number]]:
     """Shortest path on the graph itself. Independent of tree_search."""
     if source == target:
@@ -117,8 +119,10 @@ def dijkstra(problem: Problem, source: int, target: int, hop: bool = False) -> O
             path.reverse()
             return path, g
         for nxt, cost in problem.neighbors(node):
+            # hop=True treats every edge as one move; otherwise use its actual cost.
             step: Number = 1 if hop else cost
             new_g = g + step
+            # Relax an edge only when it improves the best known value for that node.
             if new_g < best.get(nxt, float("inf")):
                 best[nxt] = new_g
                 parent[nxt] = node
@@ -126,6 +130,7 @@ def dijkstra(problem: Problem, source: int, target: int, hop: bool = False) -> O
     return None
 
 
+# Find the best reachable goal value, independently for cost and for moves.
 def optimal_to_any_goal(problem: Problem, hop: bool = False) -> Optional[Number]:
     """Best cost, or best hop count, from the origin to any destination."""
     best: Optional[Number] = None
@@ -144,6 +149,7 @@ def edge_is_admissible(problem: Problem) -> bool:
     for src, edges in problem.adj.items():
         for dst, cost in edges:
             length = euclidean(problem.coords[src], problem.coords[dst])
+            # A tiny tolerance avoids rejecting equality due to floating-point rounding.
             if float(cost) + 1e-9 < length:
                 return False
     return True
@@ -152,6 +158,7 @@ def edge_is_admissible(problem: Problem) -> bool:
 def path_cost(problem: Problem, path: List[int]) -> Optional[Number]:
     """Sum of the cheapest edge on each step. None if a step has no edge."""
     total: Number = 0
+    # Pair consecutive path nodes to inspect each traversed edge.
     for src, dst in zip(path, path[1:]):
         costs = [cost for nxt, cost in problem.adj.get(src, []) if nxt == dst]
         if not costs:
@@ -173,6 +180,7 @@ def visit_all_cost(problem: Problem) -> Optional[Number]:
     if problem.origin in problem.goals and not remaining:
         return 0
     best: Optional[Number] = None
+    # Try every goal order; feasible for these small tests, but factorial in goal count.
     for order in itertools.permutations(remaining):
         cursor = problem.origin
         total: Number = 0
@@ -190,8 +198,10 @@ def visit_all_cost(problem: Problem) -> Optional[Number]:
     return best
 
 
+# Run the actual entry script in a subprocess to check its public command-line behavior.
 def run_cli(filename: str, method: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
+        # Use the same Python interpreter that is running this test harness.
         [sys.executable, os.path.join(ROOT, "search.py"), filename, method],
         cwd=ROOT,
         capture_output=True,
@@ -207,6 +217,7 @@ def main() -> int:
     header = f"{'map':<28} {'method':<6} {'goal':>4} {'cost':>6} {'hops':>4} {'created':>8} {'expanded':>8} path"
     rows.append(header)
 
+    # Exclude deliberately malformed 99_ fixtures from the normal search cases.
     map_names = sorted(
         name
         for name in os.listdir(os.path.join(ROOT, "tests"))
@@ -217,6 +228,7 @@ def main() -> int:
         rel = f"tests/{name}"
         problem = load_problem(os.path.join(ROOT, rel))
         admissible = edge_is_admissible(problem)
+        # Compute reference optima before comparing the methods with different objectives.
         best_cost = optimal_to_any_goal(problem, hop=False)
         best_hops = optimal_to_any_goal(problem, hop=True)
         methods = list(METHODS)
@@ -224,11 +236,13 @@ def main() -> int:
             methods.append("ALL")
 
         for method in methods:
+            # Compare the in-process result with a separate command-line invocation.
             result = solve(problem, method)
             proc = run_cli(rel, method)
             if proc.returncode != 0:
                 errors.append(f"{name} {method}: CLI exit {proc.returncode}: {proc.stderr.strip()}")
                 continue
+            # Normalize Windows line endings before checking the exact output format.
             stdout = proc.stdout.replace("\r\n", "\n")
             if stdout.endswith("\n"):
                 stdout = stdout[:-1]
@@ -249,6 +263,7 @@ def main() -> int:
             ]:
                 errors.append(f"{name} {method}: CLI output does not match the library result: {lines!r}")
 
+            # Validate endpoints, goal membership, hop count, and edge existence.
             if result.path[0] != problem.origin or result.path[-1] != result.goal:
                 errors.append(f"{name} {method}: path endpoints are wrong: {result.path}")
             if result.goal not in problem.goals and method != "ALL":
@@ -273,10 +288,12 @@ def main() -> int:
                 if method in ("AS", "CUS1") and result.cost != summed and result.cost not in _possible_sums(problem, result.path):
                     errors.append(f"{name} {method}: stored cost {result.cost} is not a real path cost")
 
+            # Cost-based methods must match the independent minimum cost.
             if method in ("AS", "CUS1") and best_cost is not None and result.cost != best_cost:
                 errors.append(
                     f"{name} {method}: cost {result.cost} is not optimal ({best_cost})"
                 )
+            # Move-based methods must match the independent minimum number of edges.
             if method in ("BFS", "CUS2") and best_hops is not None and result.hops != best_hops:
                 errors.append(
                     f"{name} {method}: hops {result.hops} is not the minimum ({best_hops})"
@@ -284,6 +301,7 @@ def main() -> int:
             if method == "AS" and not admissible:
                 errors.append(f"{name}: edge costs are below straight-line length, A* check is not reliable")
 
+            # Exact paths are checked only where fixtures specify deterministic expected results.
             expected = EXPECTED_PATHS.get(name, {}).get(method)
             if expected is not None and result.path != expected:
                 errors.append(f"{name} {method}: path {result.path} != expected {expected}")
@@ -295,6 +313,7 @@ def main() -> int:
             if name == "16_parallel_edges.txt" and method in ("AS", "CUS1") and result.cost != 4:
                 errors.append(f"{name} {method}: should use the cheaper parallel edge, cost {result.cost}")
 
+            # For the extension, validate both total cost and coverage of every goal.
             if method == "ALL":
                 needed = visit_all_cost(problem)
                 if needed is None:
@@ -322,6 +341,7 @@ def main() -> int:
     if unknown.returncode == 0:
         errors.append("DFS is not in this team's method list and should be rejected")
     usage = subprocess.run(
+        # Use the same Python interpreter that is running this test harness.
         [sys.executable, os.path.join(ROOT, "search.py")],
         cwd=ROOT,
         capture_output=True,
@@ -332,6 +352,7 @@ def main() -> int:
 
     report = "\n".join(rows) + "\n"
     print(report)
+    # Save the displayed table and any failures for review and report preparation.
     out_path = os.path.join(ROOT, "test_results.txt")
     with open(out_path, "w", encoding="utf-8") as handle:
         handle.write(report)
@@ -339,6 +360,7 @@ def main() -> int:
             handle.write("\nFAILURES\n")
             handle.write("\n".join(errors) + "\n")
 
+    # A nonzero return code lets callers detect failed checks automatically.
     if errors:
         print(f"{len(errors)} FAILURE(S)")
         for message in errors:
@@ -348,14 +370,17 @@ def main() -> int:
     return 0
 
 
+# Parallel edges can share endpoints but differ in cost; enumerate all valid path totals.
 def _possible_sums(problem: Problem, path: List[int]) -> set:
     """Every total cost the path could have if parallel edges are chosen differently."""
     totals = {0}
+    # Pair consecutive path nodes to inspect each traversed edge.
     for src, dst in zip(path, path[1:]):
         costs = [c for nxt, c in problem.adj[src] if nxt == dst]
         totals = {total + cost for total in totals for cost in costs}
     return totals
 
 
+# Run the harness only when invoked directly, not when imported.
 if __name__ == "__main__":
     sys.exit(main())
