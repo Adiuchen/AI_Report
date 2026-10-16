@@ -28,7 +28,7 @@ EXPECTED_PATHS = {
     "03_origin_is_goal.txt": {"BFS": [1], "AS": [1], "CUS1": [1], "CUS2": [1]},
     "05_hops_vs_cost.txt": {
         "BFS": [1, 4],
-        "CUS2": [1, 4],
+        "CUS2": [1, 2, 3, 4],
         "AS": [1, 2, 3, 4],
         "CUS1": [1, 2, 3, 4],
     },
@@ -46,7 +46,7 @@ EXPECTED_PATHS = {
     },
     "08_chronological_tie.txt": {
         "BFS": [1, 2, 4],
-        "CUS2": [1, 2, 4],
+        "CUS2": [1, 3, 4],
         "AS": [1, 3, 4],
         "CUS1": [1, 3, 4],
     },
@@ -70,7 +70,7 @@ EXPECTED_PATHS = {
     },
     "12_any_destination.txt": {
         "BFS": [1, 6],
-        "CUS2": [1, 6],
+        "CUS2": [1, 2, 4],
         "AS": [1, 2, 4],
         "CUS1": [1, 2, 4],
     },
@@ -289,20 +289,20 @@ def main() -> int:
                     summed += min(costs)
                 if not step_ok:
                     errors.append(f"{name} {method}: bad step cost")
-                if method in ("AS", "CUS1") and result.cost != summed and result.cost not in _possible_sums(problem, result.path):
+                if method in ("AS", "CUS1", "CUS2") and result.cost != summed and result.cost not in _possible_sums(problem, result.path):
                     errors.append(f"{name} {method}: stored cost {result.cost} is not a real path cost")
 
             # Cost-based methods must match the independent minimum cost.
-            if method in ("AS", "CUS1") and best_cost is not None and result.cost != best_cost:
+            if method in ("AS", "CUS1", "CUS2") and best_cost is not None and result.cost != best_cost:
                 errors.append(
                     f"{name} {method}: cost {result.cost} is not optimal ({best_cost})"
                 )
             # Move-based methods must match the independent minimum number of edges.
-            if method in ("BFS", "CUS2") and best_hops is not None and result.hops != best_hops:
+            if method == "BFS" and best_hops is not None and result.hops != best_hops:
                 errors.append(
                     f"{name} {method}: hops {result.hops} is not the minimum ({best_hops})"
                 )
-            if method == "AS" and not admissible:
+            if method in ("AS", "CUS2") and not admissible:
                 errors.append(f"{name}: edge costs are below straight-line length, A* check is not reliable")
 
             # Exact paths are checked only where fixtures specify deterministic expected results.
@@ -314,7 +314,7 @@ def main() -> int:
                 errors.append(f"{name} {method}: origin is a goal, created should be 1, got {result.created}")
             if name == "14_single_edge.txt" and result.created != 2:
                 errors.append(f"{name} {method}: single edge should create 2 nodes, got {result.created}")
-            if name == "16_parallel_edges.txt" and method in ("AS", "CUS1") and result.cost != 4:
+            if name == "16_parallel_edges.txt" and method in ("AS", "CUS1", "CUS2") and result.cost != 4:
                 errors.append(f"{name} {method}: should use the cheaper parallel edge, cost {result.cost}")
 
             # For the extension, validate both total cost and coverage of every goal.
@@ -388,3 +388,4 @@ def _possible_sums(problem: Problem, path: List[int]) -> set:
 # Run the harness only when invoked directly, not when imported.
 if __name__ == "__main__":
     sys.exit(main())
+
