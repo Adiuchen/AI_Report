@@ -104,7 +104,7 @@ There is no GUI.
 
 The agent starts at an origin on a directed graph and must reach **one** of the destination nodes. Each edge has a cost and may be one-way. On the sample map, `(2,1): 4` allows a move from node 2 to node 1 at cost 4, and there is no matching edge back from 1 to 2.
 
-A state is the id of the current graph node. An action is “follow one outgoing edge”. The path cost is the sum of edge costs. For BFS and CUS2 we also care about the number of edges, called moves or hops. The goal test succeeds when the current node is any member of the destination set. The search may stop at the first success. It does not have to visit the other destinations. Section 6 removes that shortcut.
+A state is the id of the current graph node. An action is “follow one outgoing edge”. The path cost is the sum of edge costs. BFS minimises the number of edges, called moves or hops; AS, CUS1, and the revised CUS2 minimise path cost. The goal test succeeds when the current node is any member of the destination set. The search may stop at the first success. It does not have to visit the other destinations. Section 6 removes that shortcut.
 
 The sample map is the one printed in the specification.
 
@@ -143,7 +143,7 @@ When that rank is tied, the program uses two further rules from the specificatio
 | BFS | Uninformed, from the lectures | Number of moves | depth |
 | AS | Informed, from the lectures | Path cost | f = g + h |
 | CUS1 | Custom uninformed | Path cost | g |
-| CUS2 | Custom informed | Number of moves | f = depth + h_moves |
+| CUS2 | Custom informed | Path cost | f = g + 0.8 h |
 
 **BFS** expands the shallowest node. With the tie-break above, nodes at the same depth come out in order of node id, and only then in the order they were added. The first destination removed from the frontier is a minimum-move destination. BFS does not read edge costs, so a one-edge toll road is preferred to a three-edge cheap road.
 
@@ -157,18 +157,22 @@ When that rank is tied, the program uses two further rules from the specificatio
 
 **CUS1** is uniform-cost search (Dijkstra’s algorithm written as tree search). It expands the smallest `g` and uses no heuristic, so it is uninformed. With non-negative edge costs it returns a minimum-cost path, the same optimum as A*, usually after creating more nodes. It is a better custom uninformed method for this problem than a second blind traversal, because the specification defines “optimal” as lowest cost.
 
-**CUS2** is A* aimed at moves rather than cost. Each edge counts as one move, so `g` is the depth. The heuristic is
+**CUS2** is now A* with a scaled cost heuristic, f(n) = g(n) + w h(n), with w = 0.8. It uses the same nearest-goal straight-line cost estimate as AS. It no longer minimises moves and does not divide by the longest edge length.
 
-h_moves(n) = (straight-line distance to the nearest destination) / L
+The purpose of the weight is to control the influence of estimated remaining cost relative to accumulated actual cost. At w = 0 the ranking is uniform-cost search, at w = 1 it is standard A*, and at w = 0.8 it retains 80% of the heuristic estimate. The actual edge costs and reported path cost are unchanged. This is a deliberately conservative experimental setting, not a literature-derived optimal value.
 
-where L is the longest straight-line length of any edge on that map. One move covers at most L, so the number of moves still required is at least distance / L. The heuristic does not overestimate, and the first destination expanded has the fewest moves. On the sample map L ≈ 3.162 and h_moves(2) ≈ 4.123 / 3.162 ≈ 1.30, so A* expects a little more than one move even though two moves are actually needed. That is a legal underestimate.
+If h is non-negative and admissible, 0.8 h <= h <= h*, so the scaled heuristic remains admissible. Under our finite-map, non-negative-cost assumptions, tree search with path-cycle rejection and goal testing on removal retains minimum-cost solutions. Scaling an arbitrary overestimating heuristic by 0.8 does not automatically repair it. The sufficient edge-cost condition described for AS is still used in the tests.
+
+Weighted A* literature commonly discusses *inflation* with w > 1, to trade optimality for stronger goal direction. Our w < 1 setting instead weakens the estimate and can expand more nodes than standard A*. Ebendt and Drechsler (2009) provides context for heuristic weighting; it does not establish 0.8 as a preferred value. The admissibility argument above is our direct application of the standard A* condition described by Poole and Mackworth.
+
+This is a team-requested algorithm revision. Eligibility as the assignment's custom informed method and any requirement for a move-minimising CUS2 must be checked against the original assignment/tutor instructions; this report does not establish approval. The separate Word draft has not been regenerated for this revision.
 
 # 3. Features, bugs, and missing parts
 
 **Implemented**
 
 - Parser for `Nodes`, `Edges`, `Origin`, and `Destinations`, including one-way edges, several destinations separated by semicolons, blank lines, and a repeated edge with a different cost.
-- BFS, A* (`AS`), uniform-cost search (`CUS1`), and move-count A* (`CUS2`).
+- BFS, A* (`AS`), uniform-cost search (`CUS1`), and scaled-heuristic cost A* (`CUS2`, w = 0.8).
 - Command-line output in the three-line format required for batch testing.
 - The two tie-break rules.
 - Rejection of a node that already appears on the current branch, so cycles terminate.
@@ -188,13 +192,13 @@ The full specification lists six algorithms. Our tutor approved a two-person tea
 
 **Known bugs**
 
-None. `python run_tests.py` passed on all 17 maps on Windows with Python 3.14.
+The revised `python run_tests.py` passed on all 17 maps in the current local validation. This is coverage of these fixtures, not proof that no bugs exist.
 
 # 4. Testing
 
 ## 4.1 How the tests are judged
 
-`run_tests.py` does not trust the search code to mark its own homework. A separate Dijkstra routine computes the cheapest path and the fewest-move path on the graph. For `AS` and `CUS1` the path cost must equal the Dijkstra cost. For `BFS` and `CUS2` the number of moves must equal the fewest-move distance. Each step of the printed path must be a real edge. The command-line text must match the value returned inside the program. Maps that were worked out by hand also check the exact node sequence, which is how the tie-break is tested.
+`run_tests.py` does not trust the search code to mark its own homework. A separate Dijkstra routine computes the cheapest path and the fewest-move path on the graph. For `AS`, `CUS1`, and the revised `CUS2`, path cost must equal the Dijkstra cost. Only `BFS` is checked against the minimum-move distance. CUS2 is no longer tested against its old move-count objective. Each step of the printed path must be a real edge. The command-line text must match the value returned inside the program. Maps that were worked out by hand also check the exact node sequence, which is how the tie-break is tested.
 
 ## 4.2 The maps
 
@@ -220,86 +224,97 @@ None. `python run_tests.py` passed on all 17 maps on Windows with Python 3.14.
 
 A malformed file (`99_bad_format.txt`), a missing file, an unknown method, and a command with no arguments are also checked. Each of those must exit with an error on the standard error stream and must not print a fake path.
 
-## 4.3 Results where the path is the same
+## 4.3 Results after the CUS2 revision
 
-On these maps every required method returns the same nodes. Cost and moves match the independent shortest-path check. “Created” is the number printed as `number_of_nodes`.
+The following table was generated from the updated test run. Created includes the start; expanded counts nodes removed, including a successful goal.
 
-| Map | Path | Cost | Moves | Created BFS | AS | CUS1 | CUS2 |
-|---|---|---:|---:|---:|---:|---:|---:|
-| 01 sample | 2 1 4 | 10 | 2 | 11 | 8 | 11 | 8 |
-| 02 only node 5 | 2 3 5 | 10 | 2 | 13 | 8 | 13 | 6 |
-| 03 origin is goal | 1 | 0 | 0 | 1 | 1 | 1 | 1 |
-| 06 one-way detour | 1 4 3 2 | 3 | 3 | 4 | 4 | 4 | 4 |
-| 07 smaller id | 1 2 4 | 4 | 2 | 5 | 5 | 5 | 5 |
-| 09 chain | 1 2 3 4 5 | 4 | 4 | 5 | 5 | 5 | 5 |
-| 10 dead end | 1 3 4 | 2 | 2 | 4 | 4 | 4 | 4 |
-| 11 cycle | 1 2 3 | 2 | 2 | 3 | 3 | 3 | 3 |
-| 14 one edge | 1 2 | 4 | 1 | 2 | 2 | 2 | 2 |
-| 15 self-loop | 1 2 | 2 | 1 | 2 | 2 | 2 | 2 |
-| 16 parallel edges | 1 2 3 | 4 | 2 | 5 | 4 | 4 | 5 |
-
-Map 4 prints `No path found` for all four methods. Map 3 creates exactly one node: the origin is expanded, it is a goal, and no children are generated. Map 14 creates exactly two: the origin and the goal. Map 11 and map 15 finish, which is the cycle test.
-
-On map 10 the path is the same, but A* and CUS2 expand 3 nodes while BFS and CUS1 expand 4. The dead-end node is created as a child and then left on the frontier, because the heuristic ranks the useful child higher. Section 5 uses this.
-
-On map 16 the path cost is 4, so the edge of cost 3 was used and the edge of cost 10 was not. A* and CUS1 create 4 nodes; BFS and CUS2 create 5, because the extra parallel edge is a separate tree node of equal depth.
-
-## 4.4 Results where the methods disagree
-
-| Map | BFS | AS | CUS1 | CUS2 |
-|---|---|---|---|---|
-| 05 toll vs cheap | path 1 4, cost 100, 1 move, 4 created | path 1 2 3 4, cost 3, 3 moves, 5 created | same as AS, 5 created | path 1 4, cost 100, 1 move, 3 created |
-| 08 equal optima | path 1 2 4, cost 6, 2 moves | path 1 3 4, cost 6, 2 moves | same path as AS | same path as BFS |
-| 12 two goals | path 1 6, cost 8, 1 move, 4 created | path 1 2 4, cost 2, 2 moves, 4 created | same as AS | path 1 6, cost 8, 1 move, 3 created |
-| 13 larger map | path 1 6 7, cost 23, 2 moves, 18 created | path 1 2 4 7, cost 11, 3 moves, 16 created | same path as AS, 24 created | path 1 6 7, cost 23, 2 moves, 10 created |
-
-Map 8 is a tie, not a disagreement about quality. Both paths cost 6 and both have 2 moves. BFS meets node 2 before node 3 because 2 is the smaller id, so the goal copy that arrives through node 2 is the one expanded. CUS1 meets node 3 first because that branch has g = 1, against g = 2 on the branch through node 2. The goal copy through node 3 is therefore added earlier, and the second tie-break keeps it. A* follows the cost ranking. CUS2 follows the move ranking, which at equal depth falls back to the smaller id, like BFS.
-
-Map 17 is discussed in Section 6. The four required methods all stop at `1 2 3` (cost 2, one destination). `ALL` returns `1 2 4 2 3` (cost 4, both destinations).
+| Map | Method | Goal | Cost | Moves | Created | Expanded | Path |
+|---|---|---:|---:|---:|---:|---:|---|
+| 01_pdf_example.txt | BFS | 4 | 10 | 2 | 11 | 6 | 2 1 4 |
+| 01_pdf_example.txt | AS | 4 | 10 | 2 | 8 | 4 | 2 1 4 |
+| 01_pdf_example.txt | CUS1 | 4 | 10 | 2 | 11 | 6 | 2 1 4 |
+| 01_pdf_example.txt | CUS2 | 4 | 10 | 2 | 8 | 4 | 2 1 4 |
+| 02_single_destination.txt | BFS | 5 | 10 | 2 | 13 | 7 | 2 3 5 |
+| 02_single_destination.txt | AS | 5 | 10 | 2 | 8 | 4 | 2 3 5 |
+| 02_single_destination.txt | CUS1 | 5 | 10 | 2 | 13 | 7 | 2 3 5 |
+| 02_single_destination.txt | CUS2 | 5 | 10 | 2 | 8 | 4 | 2 3 5 |
+| 03_origin_is_goal.txt | BFS | 1 | 0 | 0 | 1 | 1 | 1 |
+| 03_origin_is_goal.txt | AS | 1 | 0 | 0 | 1 | 1 | 1 |
+| 03_origin_is_goal.txt | CUS1 | 1 | 0 | 0 | 1 | 1 | 1 |
+| 03_origin_is_goal.txt | CUS2 | 1 | 0 | 0 | 1 | 1 | 1 |
+| 04_unreachable.txt | BFS | - | - | - | - | - | NO PATH |
+| 04_unreachable.txt | AS | - | - | - | - | - | NO PATH |
+| 04_unreachable.txt | CUS1 | - | - | - | - | - | NO PATH |
+| 04_unreachable.txt | CUS2 | - | - | - | - | - | NO PATH |
+| 05_hops_vs_cost.txt | BFS | 4 | 100 | 1 | 4 | 3 | 1 4 |
+| 05_hops_vs_cost.txt | AS | 4 | 3 | 3 | 5 | 4 | 1 2 3 4 |
+| 05_hops_vs_cost.txt | CUS1 | 4 | 3 | 3 | 5 | 4 | 1 2 3 4 |
+| 05_hops_vs_cost.txt | CUS2 | 4 | 3 | 3 | 5 | 4 | 1 2 3 4 |
+| 06_one_way_detour.txt | BFS | 2 | 3 | 3 | 4 | 4 | 1 4 3 2 |
+| 06_one_way_detour.txt | AS | 2 | 3 | 3 | 4 | 4 | 1 4 3 2 |
+| 06_one_way_detour.txt | CUS1 | 2 | 3 | 3 | 4 | 4 | 1 4 3 2 |
+| 06_one_way_detour.txt | CUS2 | 2 | 3 | 3 | 4 | 4 | 1 4 3 2 |
+| 07_tie_smaller_node.txt | BFS | 4 | 4 | 2 | 5 | 4 | 1 2 4 |
+| 07_tie_smaller_node.txt | AS | 4 | 4 | 2 | 5 | 4 | 1 2 4 |
+| 07_tie_smaller_node.txt | CUS1 | 4 | 4 | 2 | 5 | 4 | 1 2 4 |
+| 07_tie_smaller_node.txt | CUS2 | 4 | 4 | 2 | 5 | 4 | 1 2 4 |
+| 08_chronological_tie.txt | BFS | 4 | 6 | 2 | 5 | 4 | 1 2 4 |
+| 08_chronological_tie.txt | AS | 4 | 6 | 2 | 5 | 4 | 1 3 4 |
+| 08_chronological_tie.txt | CUS1 | 4 | 6 | 2 | 5 | 4 | 1 3 4 |
+| 08_chronological_tie.txt | CUS2 | 4 | 6 | 2 | 5 | 4 | 1 3 4 |
+| 09_linear_chain.txt | BFS | 5 | 4 | 4 | 5 | 5 | 1 2 3 4 5 |
+| 09_linear_chain.txt | AS | 5 | 4 | 4 | 5 | 5 | 1 2 3 4 5 |
+| 09_linear_chain.txt | CUS1 | 5 | 4 | 4 | 5 | 5 | 1 2 3 4 5 |
+| 09_linear_chain.txt | CUS2 | 5 | 4 | 4 | 5 | 5 | 1 2 3 4 5 |
+| 10_dead_end.txt | BFS | 4 | 2 | 2 | 4 | 4 | 1 3 4 |
+| 10_dead_end.txt | AS | 4 | 2 | 2 | 4 | 3 | 1 3 4 |
+| 10_dead_end.txt | CUS1 | 4 | 2 | 2 | 4 | 4 | 1 3 4 |
+| 10_dead_end.txt | CUS2 | 4 | 2 | 2 | 4 | 3 | 1 3 4 |
+| 11_cycle.txt | BFS | 3 | 2 | 2 | 3 | 3 | 1 2 3 |
+| 11_cycle.txt | AS | 3 | 2 | 2 | 3 | 3 | 1 2 3 |
+| 11_cycle.txt | CUS1 | 3 | 2 | 2 | 3 | 3 | 1 2 3 |
+| 11_cycle.txt | CUS2 | 3 | 2 | 2 | 3 | 3 | 1 2 3 |
+| 12_any_destination.txt | BFS | 6 | 8 | 1 | 4 | 3 | 1 6 |
+| 12_any_destination.txt | AS | 4 | 2 | 2 | 4 | 3 | 1 2 4 |
+| 12_any_destination.txt | CUS1 | 4 | 2 | 2 | 4 | 3 | 1 2 4 |
+| 12_any_destination.txt | CUS2 | 4 | 2 | 2 | 4 | 3 | 1 2 4 |
+| 13_larger_map.txt | BFS | 7 | 23 | 2 | 18 | 9 | 1 6 7 |
+| 13_larger_map.txt | AS | 7 | 11 | 3 | 16 | 8 | 1 2 4 7 |
+| 13_larger_map.txt | CUS1 | 7 | 11 | 3 | 24 | 12 | 1 2 4 7 |
+| 13_larger_map.txt | CUS2 | 7 | 11 | 3 | 20 | 10 | 1 2 4 7 |
+| 14_single_edge.txt | BFS | 2 | 4 | 1 | 2 | 2 | 1 2 |
+| 14_single_edge.txt | AS | 2 | 4 | 1 | 2 | 2 | 1 2 |
+| 14_single_edge.txt | CUS1 | 2 | 4 | 1 | 2 | 2 | 1 2 |
+| 14_single_edge.txt | CUS2 | 2 | 4 | 1 | 2 | 2 | 1 2 |
+| 15_self_loop.txt | BFS | 2 | 2 | 1 | 2 | 2 | 1 2 |
+| 15_self_loop.txt | AS | 2 | 2 | 1 | 2 | 2 | 1 2 |
+| 15_self_loop.txt | CUS1 | 2 | 2 | 1 | 2 | 2 | 1 2 |
+| 15_self_loop.txt | CUS2 | 2 | 2 | 1 | 2 | 2 | 1 2 |
+| 16_parallel_edges.txt | BFS | 3 | 4 | 2 | 5 | 4 | 1 2 3 |
+| 16_parallel_edges.txt | AS | 3 | 4 | 2 | 4 | 3 | 1 2 3 |
+| 16_parallel_edges.txt | CUS1 | 3 | 4 | 2 | 4 | 3 | 1 2 3 |
+| 16_parallel_edges.txt | CUS2 | 3 | 4 | 2 | 4 | 3 | 1 2 3 |
+| 17_visit_all.txt | BFS | 3 | 2 | 2 | 4 | 3 | 1 2 3 |
+| 17_visit_all.txt | AS | 3 | 2 | 2 | 4 | 3 | 1 2 3 |
+| 17_visit_all.txt | CUS1 | 3 | 2 | 2 | 4 | 3 | 1 2 3 |
+| 17_visit_all.txt | CUS2 | 3 | 2 | 2 | 4 | 3 | 1 2 3 |
+| 17_visit_all.txt | ALL | 3 | 4 | 4 | 8 | 7 | 1 2 4 2 3 |
 
 # 5. Insights
 
-The useful question is not “which algorithm is best”, but which quantity we asked it to minimise, and how many tree nodes it built while doing that.
+## 5.1 Cost and moves
 
-## 5.1 Same optimum, less work
+On map 05, BFS returns 1 4, cost 100, one move. AS, CUS1, and revised CUS2 return 1 2 3 4, cost 3, three moves. This is the intended change: CUS2 now optimises cost. On map 12 it likewise chooses node 4 at cost 2 rather than node 6 at cost 8.
 
-On the specification map every method returns `2 1 4`, cost 10, in two moves. The other destination, node 5, also has a two-move path of cost 10 (`2 3 5`). The tie-break selects node 4. Quality is identical. The work is not:
+## 5.2 Heuristic influence
 
-| Method | Nodes created | Nodes expanded |
-|---|---:|---:|
-| BFS | 11 | 6 |
-| CUS1 | 11 | 6 |
-| AS | 8 | 4 |
-| CUS2 | 8 | 4 |
+On map 13, AS, CUS2, and CUS1 all return 1 2 4 7 at cost 11. AS creates 16 nodes and removes 8, CUS2 creates 20 and removes 10, and CUS1 creates 24 and removes 12. In this fixture, weakening the heuristic places CUS2's work between AS and UCS. The sample map produces identical AS/CUS2 counts (8 created, 4 removed). A weight change need not change a path or a node count.
 
-A* and CUS2 generate the cheap-looking branches first and meet a destination before the rest of the tree exists. With only one destination (map 2, goal 5 only), the gap grows. BFS and CUS1 create 13 nodes. A* creates 8. CUS2 creates 6. The straight-line estimate points at node 3, which really is the right first step toward node 5, so the informed searches barely leave that branch.
+## 5.3 Purpose and limits of 0.8
 
-Uniform-cost search does not win on this map. The cheapest path is also a shortest-move path, and the edge costs are similar, so ordering by `g` removes the destination at about the same time as ordering by depth. The heuristic is what reduces the tree, not the change from depth to cost.
+The research question for this revision is: how does reducing the cost heuristic's weight affect node creation and expansion while preserving the minimum-cost objective? These tests support a more conservative search, not a speed advantage over AS. A larger controlled study could compare w = 0, 0.5, 0.8, and 1 over more maps and measure elapsed time as well as node counts. 0.8 is an experimental choice; it has not been tuned or proven best.
 
-## 5.2 Cost and moves are different questions
-
-Map 5 is a line of towns. The direct road from 1 to 4 costs 100. The road 1–2–3–4 costs 3. BFS returns `1 4`. That is the correct **fewest-move** answer and a poor **cheapest-path** answer. A* and CUS1 return `1 2 3 4` at cost 3. CUS2 agrees with BFS, and it creates only 3 nodes to do it, because the distance heuristic sees that the goal is one long step away.
-
-Map 12 is the same lesson with two legal goals. BFS and CUS2 go to node 6 in one move and pay 8. A* and CUS1 go to node 4 in two moves and pay 2. Both answers are correct for the objective written in the table in Section 2.3. A marker who wanted the lowest cost would call the BFS path wrong. A marker who wanted the least moves would call the A* path wrong. The specification’s main objective is lowest cost, and it separately asks CUS2 for least moves. The program follows that split on purpose.
-
-Map 13 is large enough for the costs to pull apart. The two-move path `1 6 7` costs 23. The three-move path `1 2 4 7` costs 11. There is another three-move path of cost 11 ending at node 8; the tie-break keeps node 7.
-
-| Method | Path | Cost | Moves | Created | Expanded |
-|---|---|---:|---:|---:|---:|
-| BFS | 1 6 7 | 23 | 2 | 18 | 9 |
-| CUS2 | 1 6 7 | 23 | 2 | 10 | 5 |
-| AS | 1 2 4 7 | 11 | 3 | 16 | 8 |
-| CUS1 | 1 2 4 7 | 11 | 3 | 24 | 12 |
-
-Read down the “Created” column. For the **cost** objective, A* and CUS1 both find cost 11, and A* builds the smaller tree (16 against 24). The heuristic is doing real work: CUS1 has to open the toll road and the cross links before g = 11 is the best thing left in the frontier. For the **move** objective, CUS2 and BFS both find a two-move path, and CUS2 builds the smaller tree (10 against 18). An informed method is better than the matching uninformed method on both objectives. It is not better than a method that was given a different objective.
-
-## 5.3 What we would run on a new map
-
-If the user wants the cheapest route, and edges cost at least their straight-line length, run `AS`. On map 13 it matched CUS1’s cost and created fewer nodes. If the edge costs can undercut the straight-line distance, `AS` is no longer safe and `CUS1` is the method that still minimises cost.
-
-If the user wants the fewest turns, run `CUS2`. It matched BFS on every hop-optimal test and created fewer nodes on maps 2, 5, 12, and 13. BFS remains the simple explanation of “expand one layer at a time”, which is why we kept it as the lecture uninformed method.
-
-We would not use BFS as the only algorithm for this assignment’s cost objective. Maps 5, 12, and 13 are ordinary roads with different tolls, and BFS pays the toll.
+For minimum cost with the admissible straight-line heuristic, AS remains the stronger baseline. CUS1 provides the heuristic-free cost baseline. BFS provides the minimum-move baseline. Revised CUS2 studies heuristic scaling rather than a different objective.
 
 # 6. Research
 
@@ -342,13 +357,9 @@ We did not put a heuristic on `ALL`. An admissible one exists (for example a min
 
 # 7. Conclusion
 
-For the route problem as set — one destination, lowest cost, edges at least as long as the straight-line distance — **A\*** is the method we would keep. It found the same cheapest paths as uniform-cost search in these tests and built smaller trees once the map offered a real choice (16 nodes created against 24 on the eight-node map). Uniform-cost search is the right fallback when a distance heuristic would overestimate.
+The revised methods comprise BFS for minimum moves, CUS1 for minimum cost without a heuristic, AS for minimum cost with the full straight-line heuristic, and CUS2 for minimum cost with 80% of that heuristic. AS and CUS2 rely on a suitable cost heuristic; CUS1 remains the reference when geometry does not provide an admissible cost estimate.
 
-Breadth-first search is the right lecture example of an uninformed layer-by-layer search, and it is the right answer when every edge is a turn and turns are all that matter. It is a weak answer when the edges have different costs. CUS2 is the version of that move objective we would actually run: same hop counts as BFS, fewer nodes on the maps where a direction toward the goal was available.
-
-The node-count differences are small because the maps are small. The ordering is stable across the tests, and it matches the textbook account: a consistent heuristic does not change the optimum, it changes how much of the tree is built.
-
-Two changes would matter on a larger map. First, graph search (a closed set of expanded states) would stop the tree from rebuilding towns that were already expanded with an equal or better cost. Second, the visit-all search needs a heuristic on the remaining destinations, otherwise each new destination doubles the state space. Both are extensions of the same frontier loop, which is why the four methods were written as one search with four ranking functions.
+All revised checks passed on 17 maps. On map 13, CUS2 preserved cost 11 but created more nodes than AS (20 versus 16) and fewer than CUS1 (24). This illustrates the effect of weakening heuristic guidance, without claiming a universal performance ordering. Larger maps, more weights, and repeated timing measurements are needed for broader conclusions.
 
 # 8. Acknowledgements
 
@@ -365,3 +376,8 @@ Russell, S & Norvig, P 2021, *Artificial Intelligence: A Modern Approach*, 4th e
 Swinburne University of Technology 2026, *COS30019 Assignment 2 Part A: Tree Based Search*, assignment specification, Semester 2.
 
 Unit tutor 2026, email to Kian Xiu, October, regarding a reduced set of four search algorithms for a two-person team.
+
+
+Ebendt, R & Drechsler, R 2009, 'Weighted A* search – unifying view and application', Artificial Intelligence, vol. 173, no. 14, pp. 1310–1342, https://doi.org/10.1016/j.artint.2009.06.004. Author-institution record: https://elib.dlr.de/59485/.
+
+Poole, DL & Mackworth, AK 2017, Artificial Intelligence: Foundations of Computational Agents, 2nd edn, Section 3.6.1, 'A* Search', https://www.cs.ubc.ca/~poole/aibook/2e/html2e/ArtInt2e.Ch3.S6.SS1.html.
