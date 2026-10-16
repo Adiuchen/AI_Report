@@ -6,7 +6,7 @@ pick the next node changes:
     BFS   uninformed        expand the shallowest node (fewest edges)
     AS    informed          A*: f = g + h, h = straight-line distance
     CUS1  custom uninformed uniform-cost search: expand the lowest path cost g
-    CUS2  custom informed   A* on move count: f = moves + estimated moves left
+    CUS2  custom informed   scaled-heuristic A*: f = g + 0.8 * h_cost
 
 ALL is an optional extra (see the research note in the report). It finds a
 shortest-cost walk that starts at the origin and visits every destination.
@@ -20,6 +20,10 @@ import math
 from typing import Callable, Dict, FrozenSet, List, Optional, Tuple
 
 from problem import Number, Problem
+
+# Experimental heuristic weight: 0 gives UCS, 1 gives standard A*.
+# 0.8 retains 80% of the estimate; it is not a proven best-performing weight.
+CUS2_WEIGHT = 0.8
 
 # Names the marker will pass on the command line, plus a few aliases.
 METHOD_NAMES = {
@@ -116,53 +120,24 @@ def _reconstruct(node: _Node) -> List[int]:
     return path
 
 
-def _heuristics(problem: Problem) -> Tuple[Callable[[int], float], Callable[[int], float]]:
-    """Return (h_cost, h_moves) for the informed methods.
+def _heuristics(problem: Problem) -> Callable[[int], float]:
+    """Return straight-line distance to the nearest goal as a cost estimate.
 
-    h_cost(n) is the straight-line distance to the nearest destination.
-    It is admissible for path cost when every edge costs at least as much
-    as its own straight-line length (a shorter path cannot exist).
-
-    h_moves(n) estimates remaining moves. One move can cover at most L,
-    the longest straight-line edge in the graph, so distance / L cannot
-    be larger than the true number of moves still needed.
+    If each non-negative edge cost is at least its straight-line length,
+    this heuristic is admissible. Scaling this non-negative heuristic by
+    0 <= w <= 1 preserves admissibility, so CUS2 still seeks minimum cost.
     """
-    # A heuristic estimates remaining work; it is not the actual remaining cost or minimum moves.
-    # Coordinates and goals are known from the input, but the route must still be searched.
     goals = list(problem.goals)
     coords = problem.coords
 
     def straight_to_goal(state: int) -> float:
-        # At a goal, the remaining distance is zero.
         if state in problem.goals:
             return 0.0
-        # state is a node ID; coords[state] gives its (x, y) coordinates.
+        # Coordinates are known; the actual remaining route is still unknown.
         here = coords[state]
-        # Take the minimum straight-line distance over all goals: reaching any one goal is enough.
-        # AS uses this as remaining cost; it is admissible if each edge cost >= its straight-line length.
         return min(euclidean(here, coords[goal]) for goal in goals)
 
-    # Compute CUS2's fixed L: the maximum straight-line length of any edge in this map.
-    longest_edge = 0.0
-    # adj is an adjacency list; src is the source, edges contains its outgoing (destination, cost) pairs.
-    for src, edges in problem.adj.items():
-        # dst is this edge's endpoint, not necessarily a search goal; _cost is unused in this calculation.
-        for dst, _cost in edges:
-            # Keep the largest endpoint distance; L is neither the largest cost nor the longest route.
-            longest_edge = max(longest_edge, euclidean(coords[src], coords[dst]))
-
-    # CUS2 converts straight-line distance into a lower-bound estimate of remaining moves.
-    def moves_left(state: int) -> float:
-        # Return zero when L is zero to avoid division by zero; CUS2 then ranks by depth alone.
-        if longest_edge <= 0.0:
-            return 0.0
-        # One move spans at most L; if k moves remain, straight-line distance <= k * L.
-        # Thus distance / L <= k: for example, 10 / 4 = 2.5 implies at least 3 actual moves.
-        # The fractional value ranks candidates; actual paths still have an integer number of moves.
-        return straight_to_goal(state) / longest_edge
-
-    # Return two callable functions, not two fixed values, so each candidate can be evaluated.
-    return straight_to_goal, moves_left
+    return straight_to_goal
 
 
 def tree_search(problem: Problem, method: str) -> Optional[SearchResult]:
@@ -182,7 +157,7 @@ def tree_search(problem: Problem, method: str) -> Optional[SearchResult]:
         raise ValueError("ALL uses visit_all(), not tree_search()")
 
     # All four methods execute this call, but only AS and CUS2 use the heuristics for ranking.
-    h_cost, h_moves = _heuristics(problem)
+    h_cost = _heuristics(problem)
 
     # The main strategy-specific rule: lower returned values have higher priority.
     def primary(node: _Node) -> float:
@@ -194,10 +169,12 @@ def tree_search(problem: Problem, method: str) -> Optional[SearchResult]:
         # The optimality guarantee requires non-negative costs and the heuristic condition stated above.
         if method == "AS":
             return node.g + h_cost(node.state)
-        # CUS2: cheapest estimated move-count. `depth` is moves already made.
-        # The name is validated, ALL is excluded, and the other three branches return; only CUS2 remains.
-        # CUS2 ranks by moves so far plus estimated moves left; edge costs are recorded but do not rank nodes.
-        return node.depth + h_moves(node.state)
+        # Only CUS2 remains after method validation and the preceding returns.
+        # Rank by actual cost plus 80% of the estimated remaining cost.
+        # This reduces heuristic influence compared with AS (w=1), moving
+        # toward UCS (w=0). It does not multiply the actual route cost.
+        # No move-count heuristic or division by L is used anymore.
+        return node.g + CUS2_WEIGHT * h_cost(node.state)
 
     # Monotonic counter. A smaller value means "added earlier".
     added_at = itertools.count()
@@ -333,3 +310,4 @@ def solve(problem: Problem, method: str) -> Optional[SearchResult]:
     if name == "ALL":
         return visit_all(problem)
     return tree_search(problem, name)
+
