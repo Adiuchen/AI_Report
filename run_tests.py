@@ -256,12 +256,16 @@ def main() -> int:
                 rows.append(f"{name:<28} {method:<6} {'-':>4} {'-':>6} {'-':>4} {'-':>8} {'-':>8} NO PATH")
                 continue
 
-            if lines != [
+            official = [
                 f"{rel} {method}",
                 f"{result.goal} {result.created}",
                 " ".join(str(node) for node in result.path),
-            ]:
+            ]
+            arrow_path = " -> ".join(str(node) for node in result.path)
+            if lines[:3] != official:
                 errors.append(f"{name} {method}: CLI output does not match the library result: {lines!r}")
+            if f"cost: {result.cost}" not in lines or f"path: {arrow_path}" not in lines:
+                errors.append(f"{name} {method}: missing cost or arrow path in {lines!r}")
 
             # Validate endpoints, goal membership, hop count, and edge existence.
             if result.path[0] != problem.origin or result.path[-1] != result.goal:

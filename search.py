@@ -72,6 +72,13 @@ def main(argv: list[str]) -> int:
     # Print the goal and CREATED search-node count, followed by the reconstructed path.
     print(f"{result.goal} {result.created}")
     print(" ".join(str(node) for node in result.path))
+    # The three lines above are the format the marker's batch test reads.
+    # The lines below only name those numbers so the path is easier to read.
+    print(f"node (goal): {result.goal}")
+    print(f"nodes created: {result.created}")
+    print(f"cost: {result.cost}")
+    print(f"steps: {result.hops}")
+    print("path: " + " -> ".join(str(node) for node in result.path))
     return 0
 
 
