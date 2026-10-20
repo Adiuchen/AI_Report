@@ -165,7 +165,7 @@ If h is non-negative and admissible, 0.8 h <= h <= h*, so the scaled heuristic r
 
 Weighted A* literature commonly discusses *inflation* with w > 1, to trade optimality for stronger goal direction. Our w < 1 setting instead weakens the estimate and can expand more nodes than standard A*. Ebendt and Drechsler (2009) provides context for heuristic weighting; it does not establish 0.8 as a preferred value. The admissibility argument above is our direct application of the standard A* condition described by Poole and Mackworth.
 
-This is a team-requested algorithm revision. Eligibility as the assignment's custom informed method and any requirement for a move-minimising CUS2 must be checked against the original assignment/tutor instructions; this report does not establish approval. The separate Word draft has not been regenerated for this revision.
+This is a team-requested algorithm revision. Eligibility as the assignment's custom informed method and any requirement for a move-minimising CUS2 must be checked against the original assignment/tutor instructions; this report does not establish approval. The Word draft has been synchronised with this revision.
 
 # 3. Features, bugs, and missing parts
 
