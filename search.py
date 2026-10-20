@@ -6,7 +6,7 @@ Methods for this team (2 people, as agreed with the tutor):
     BFS    breadth-first search                         (uninformed)
     AS     A* with straight-line distance               (informed)
     CUS1   uniform-cost search                          (custom uninformed)
-    CUS2   A* that minimises the number of moves        (custom informed)
+    CUS2   A* with heuristic weight 0.8                 (custom informed)
 
 Optional research method:
     ALL    shortest-cost walk that visits every destination
@@ -86,3 +86,4 @@ def main(argv: list[str]) -> int:
 if __name__ == "__main__":
     # Pass command-line arguments to main; 0 signals normal completion, 1 an input error.
     sys.exit(main(sys.argv))
+
